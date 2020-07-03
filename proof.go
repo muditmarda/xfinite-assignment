@@ -10,6 +10,9 @@ import (
 	"crypto/sha256"
 )
 
+// 2D slice used to store the tree leaves and nodes
+// the 0 element (row) consists of the transaction and
+// the ith row contains the parent nodes of all the nodes in the (i-1)th row
 var tree = make([][]string, 0)
 
 func main() {
@@ -41,27 +44,21 @@ func main() {
 
 		proof, exists := prove_membership(transaction_to_find, claimed_index)
 		if exists {
-			fmt.Println("\n********************************  Voila,", transaction_to_find, "exists!! *********************************")
-			fmt.Println("Here's the proof of it's membership in the merkle tree generated from the set of the given transaction hashes:\n", proof)
+			fmt.Println("\n*********************************  Voila,", transaction_to_find, "exists!! *********************************")
+			fmt.Println("Here's the proof of its membership in the merkle tree generated from the set of the given transaction hashes:\n", strings.Join(proof, " -> "))
 		} else {
-			fmt.Println("\nSorry,", transaction_to_find, "does not exist.\nHere's the proof that it does not belong to the merkle tree generated from the set of the given transaction hashes:\n", proof)
+			fmt.Println("\n****************************** Sorry,", transaction_to_find, "does not exist!! ******************************")
+			fmt.Println("\nHere's the proof that it does not belong to the merkle tree generated from the set of the given transaction hashes:\n", strings.Join(proof, " -> "))
 		}
 		fmt.Println("\n\n====================================================================================================================================================\n")
   	}
 }
 
-func parse_transactions_input(input_str string) (transactions []string) {
-	replacer := strings.NewReplacer(" ", "", "[", "", "]", "", "\"", "", "“", "", "”", "", "'", "", "`", "")
-	parsed_input_str := replacer.Replace(input_str)
-	if len(parsed_input_str) == 0 {
-		return []string{}
-	}
- 	return strings.Split(parsed_input_str, "->")
-}
-
 func generate_merkle_root(txs []string) {
 	size := len(txs)	
 
+	// check if number of txs is an exponent of 2
+	// if not, duplicates the last element till the length of txs becomes equal to a power of 2
 	leaf_node_count := math.Log2(float64(size))
 	for leaf_node_count != float64(int64(leaf_node_count)) {
 		txs = append(txs, txs[size-1])
@@ -69,35 +66,52 @@ func generate_merkle_root(txs []string) {
 		leaf_node_count = math.Log2(float64(size))
 	}
 	
+	// calculate height of tree by size of the txs array
 	height := 0
 	for size >= 1 {
 		size /= 2
 		height += 1
 	}
 
+	// generate the merkle tree and its root
     res := make([][]string, height)
 	res[0] = txs
 	for i := 1; i < height ; i++ {
 		for j := 0; j < len(res[i-1]) ; j+=2 {
-			left := res[i-1][j]
-			right := res[i-1][j+1]
-			parent := fmt.Sprintf("%x", sha256.Sum256([]byte(left + right)))
+			left_child := res[i-1][j]
+			right_child := res[i-1][j+1]
+			// parent is the simple sha256 hash of the concatinated left and right children
+			parent := fmt.Sprintf("%x", sha256.Sum256([]byte(left_child + right_child)))
 			res[i] = append(res[i], parent)
 		}
 	}
 	tree = res
 }
 
+func prove_membership(tx string, index int) (proof []string, exists bool) {
+	if tree[0][index] != tx {
+		// if index is odd, generate and return proof of membership of element at index-1
+		// else if index is even, generate and return proof of membership of element at index+1
+		if index%2 == 1 {
+			return generate_proof_of_membership(tree[0][index-1]), false
+		} else {
+			return generate_proof_of_membership(tree[0][index+1]), false
+		}
+	} 
+	return generate_proof_of_membership(tree[0][index]), true	
+}
 
-func give_proof_of_membership(tx string) ([]string) {
+func generate_proof_of_membership(tx string) ([]string) {
 	proof := make([]string, 0)
 	search_str := tx
+	
 	for i := 0; i < (len(tree) - 1); i++ {
 		for j := 0; j < len(tree[i]); j++ {
 			current_element := tree[i][j]
+			// if search_str is equal to current_element append the appropriate neighbour to proof
 			if search_str == current_element {
-				// if index is odd, return path to element at index-1 (left_neighbour)
-				// if index is even, return path to element at index+1 (right_neighbour)
+				// if index is odd, append element at index-1 (left_neighbour) to proof path
+				// else if index is even, append element at index+1 (right_neighbour) to proof path
 				if j%2 == 1 {
 					left_neighbour := tree[i][j-1]
 
@@ -112,19 +126,17 @@ func give_proof_of_membership(tx string) ([]string) {
 			}
 		}
 	}
+	
+	// append the merkle root to the proof path
 	proof = append(proof, tree[len(tree)-1][0])
 	return proof
 }
 
-func prove_membership(tx string, index int) (proof []string, exists bool) {
-	if tree[0][index] != tx {
-		// if index is odd, return proof of membership of element at index-1
-		// if index is even, return proof of membership of element at index+1
-		if index%2 == 1 {
-			return give_proof_of_membership(tree[0][index-1]), false
-		} else {
-			return give_proof_of_membership(tree[0][index+1]), false
-		}
-	} 
-	return give_proof_of_membership(tree[0][index]), true	
+func parse_transactions_input(input_str string) (transactions []string) {
+	replacer := strings.NewReplacer(" ", "", "[", "", "]", "", "\"", "", "“", "", "”", "", "'", "", "`", "")
+	parsed_input_str := replacer.Replace(input_str)
+	if len(parsed_input_str) == 0 {
+		return []string{}
+	}
+ 	return strings.Split(parsed_input_str, "->")
 }
